@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ultimate Cendol Maker (Final Fix)</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap');
+
+        body {
+            margin: 0;
+            background-color: #ffd1dc;
+            font-family: 'Fredoka One', cursive;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        #game-wrapper {
+            position: relative;
+            width: 600px;
+            height: 800px;
+            background: #fff;
+            border: 8px solid #ff6b6b;
+            border-radius: 20px;
+            box-shadow: 10px 10px 0px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        canvas { display: block; width: 100%; height: 100%; cursor: none; }
+
+        /* UI OVERLAYS */
+        .overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255, 255, 255, 0.95);
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+            text-align: center; z-index: 20;
+        }
+
+        .hidden { display: none !important; }
+
+        h1 {
+            color: #27ae60; font-size: 48px; margin: 0;
+            text-shadow: 3px 3px 0 #badc58;
+            -webkit-text-stroke: 2px white;
+        }
+
+        p { color: #555; font-size: 20px; margin: 10px 0; }
+
+        input[type="text"] {
+            padding: 15px; font-size: 24px; text-align: center;
+            border: 4px solid #ff6b6b; border-radius: 50px;
+            outline: none; font-family: inherit; color: #ff6b6b;
+            margin: 20px 0; width: 250px; text-transform: uppercase;
+        }
+
+        .btn {
+            background: #ff6b6b; color: white;
+            padding: 15px 40px; font-size: 24px;
+            border: none; border-radius: 50px;
+            cursor: pointer; transition: transform 0.1s;
+            box-shadow: 0 6px 0 #c0392b;
+            font-family: inherit;
+        }
+        .btn:active { transform: translateY(6px); box-shadow: none; }
+        .btn:hover { background: #ff4757; }
+
+        /* HUD */
+        #hud {
+            position: absolute; top: 20px; left: 20px; right: 20px;
+            display: flex; justify-content: space-between;
+            font-size: 26px; color: #ff6b6b;
+            pointer-events: none; z-index: 10;
+            text-shadow: 2px 2px 0 white;
+        }
+
+        /* Leaderboard */
+        .lb-container {
+            background: #fff; border: 4px solid #badc58;
+            padding: 20px; border-radius: 15px;
+            width: 80%; max-height: 250px; overflow-y: auto;
+            margin-bottom: 20px;
+        }
+        table { width: 100%; border-collapse: collapse; }
+        td { padding: 8px; border-bottom: 2px dashed #eee; font-size: 18px; color: #555; }
+        td:nth-child(2), td:nth-child(3) { text-align: right; font-weight: bold; color: #ff6b6b; }
+        th { text-align: left; color: #27ae60; }
+
+        /* Music Button */
+        #music-btn {
+            position: absolute; bottom: 20px; right: 20px;
+            background: #badc58; width: 50px; height: 50px;
+            border-radius: 50%; cursor: pointer;
+            display: flex; justify-content: center; align-items: center;
+            font-size: 24px; color: white;
+            box-shadow: 0 4px 0 #6ab04c; z-index: 30;
+        }
+        #music-btn:active { transform: translateY(4px); box-shadow: none; }
+
+    </style>
+</head>
+<body>
+
+    <audio id="bgmAudio" loop><source src="bgm.mp3" type="audio/mpeg"></audio>
+    <audio id="sfxCatch"><source src="catch.mp3" type="audio/mpeg"></audio>
+    <audio id="sfxBad"><source src="bad.mp3" type="audio/mpeg"></audio>
+
+    <div id="game-wrapper">
+        <div id="music-btn" onclick="toggleMusic()">🎵</div>
+        
+        <canvas id="gameCanvas" width="600" height="800"></canvas>
+
+        <div id="hud" class="hidden">
+            <span>Cendols: <b id="cendolVal" style="color:#27ae60; font-size:32px;">0</b> (Score: <span id="scoreVal">0</span>)</span>
+            <span><b id="livesVal">❤❤❤</b></span>
+        </div>
+
+        <div id="start-screen" class="overlay">
+            <h1>Ultimate Cendol Maker</h1>
+            <p>Catch ingredients to build the bowl!</p>
+            <p style="font-size: 16px; color:#c0392b;">Avoid Bugs & Rocks!</p>
+            
+            <input type="text" id="username" placeholder="PLAYER NAME" maxlength="10">
+            <button class="btn" onclick="startGame()">START!</button>
+        </div>
+
+        <div id="game-over-screen" class="overlay hidden">
+            <h1 style="color:#ff6b6b">Sold Out!</h1>
+            <p>Cendols Made: <b id="final-cendols" style="font-size: 40px; color:#27ae60;">0</b></p>
+            <p>Total Score: <b id="final-score">0</b></p>
+            
+            <div class="lb-container">
+                <table id="lb-table">
+                    <thead><tr><th>Name</th><th>Cendols</th><th>Score</th></tr></thead>
+                    <tbody id="lb-body"></tbody>
+                </table>
+            </div>
+
+            <button class="btn" onclick="resetGame()">PLAY AGAIN</button>
+        </div>
+    </div>
+
+    <script>
+        // --- ASSETS & CONFIG ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = 600, H = 800;
+
+        const bgm = document.getElementById('bgmAudio');
+        const sfxCatch = document.getElementById('sfxCatch');
+        const sfxBad = document.getElementById('sfxBad');
+        let musicOn = false;
+
+        // --- IMAGE LOADING ---
+        const loadedImages = {};
+        // Ingredients & Bugs
+        const ITEM_TYPES = [
+            { id: 'cendol', src: 'cendol.png', score: 10, type: 'GOOD', width: 80, height: 80 },
+            { id: 'bean',   src: 'bean.png',   score: 15, type: 'GOOD', width: 70, height: 70 },
+            { id: 'ice',    src: 'ice.png',    score: 20, type: 'GOOD', width: 75, height: 75 },
+            { id: 'milk',   src: 'milk.png',   score: 25, type: 'GOOD', width: 75, height: 75 },
+            { id: 'gula',   src: 'gula.png',   score: 30, type: 'GOOD', width: 60, height: 90 },
+            { id: 'fly',    src: 'fly.png',    score: -10, type: 'BAD', width: 70, height: 70 },
+            { id: 'rock',   src: 'rock.png',   score: -5,  type: 'BAD', width: 70, height: 70 }
+        ];
+        ITEM_TYPES.forEach(item => {
+            const img = new Image(); img.src = item.src; loadedImages[item.id] = img;
+        });
+
+        // --- BOWL STAGE IMAGES ---
+        const STAGE_FILES = [
+            null, // Stage 0 (Empty - Drawn by Code)
+            'stage1_ice.png',
+            'stage2_milk.png',
+            'stage3_gula.png',
+            'stage4_bean.png',
+            'stage5_full.png'
+        ];
+        const loadedStageImages = [];
+        STAGE_FILES.forEach((src, i) => {
+            if(i===0) { loadedStageImages.push(null); return; }
+            const img = new Image(); img.src = src; loadedStageImages.push(img);
+        });
+
+
+        // Game State
+        let isRunning = false;
+        let score = 0;
+        let cendolsCompleted = 0;
+        let currentBowlStage = 0; // 0 to 5
+        let lives = 3;
+        let frame = 0;
+        let speedMultiplier = 1.2; 
+        let playerName = "Guest";
+
+        // Player (Bowl) - Increased Width for easier catching
+        const bowl = { x: W / 2, y: H - 120, w: 160, h: 100 };
+        let items = [];
+
+        // --- DRAWING FUNCTIONS ---
+        function drawBackground() {
+            ctx.fillStyle = "#e0f7fa"; ctx.fillRect(0,0,W,H);
+            ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+            for(let i=0; i<W; i+=60) ctx.fillRect(i, 0, 30, H);
+        }
+
+        // UPDATED BOWL DRAWING LOGIC
+        function drawBowl(x, y, w, h) {
+            ctx.save(); ctx.translate(x, y);
+            
+            if (currentBowlStage === 0) {
+                // --- STAGE 0: DRAW DEFAULT EMPTY BOWL (Code) ---
+                
+                // 1. Bowl Body
+                ctx.beginPath(); ctx.arc(0, 0, w/2, 0, Math.PI, false);
+                ctx.fillStyle = "#fff"; ctx.fill();
+                ctx.lineWidth = 4; ctx.strokeStyle = "#333"; ctx.stroke();
+                
+                // 2. Rim
+                ctx.beginPath(); ctx.ellipse(0, 0, w/2, 14, 0, 0, Math.PI*2);
+                ctx.fillStyle = "#ecf0f1"; ctx.fill(); ctx.stroke();
+                
+                // 3. Rooster Pattern
+                ctx.beginPath(); ctx.arc(0, 28, 14, 0, Math.PI*2); ctx.fillStyle = "#e74c3c"; ctx.fill();
+                ctx.beginPath(); ctx.arc(18, 22, 7, 0, Math.PI*2); ctx.fillStyle = "#27ae60"; ctx.fill();
+            } 
+            else {
+                // --- STAGE 1-5: DRAW IMAGE ONLY ---
+                const stageImg = loadedStageImages[currentBowlStage];
+                if(stageImg && stageImg.complete) {
+                    // Draw image centered at the bowl's position
+                    // We adjust size slightly to match the hitbox visually
+                    const drawW = w * 1.1; 
+                    const drawH = h * 1.4; // Taller because content piles up
+                    // Offset Y up because image includes content above rim
+                    ctx.drawImage(stageImg, -drawW/2, -drawH/2 - 20, drawW, drawH);
+                }
+            }
+
+            ctx.restore();
+        }
+
+        function drawItem(item) {
+            ctx.save(); ctx.translate(item.x, item.y); ctx.rotate(item.rot);
+            const img = loadedImages[item.def.id];
+            if (img && img.complete) {
+                ctx.drawImage(img, -item.def.width/2, -item.def.height/2, item.def.width, item.def.height);
+            }
+            ctx.restore();
+        }
+
+        // --- GAME LOGIC ---
+        function startGame() {
+            const input = document.getElementById('username');
+            if (!input.value.trim()) { alert("Enter name!"); return; }
+            playerName = input.value.toUpperCase().substring(0,10);
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('hud').classList.remove('hidden');
+            if (musicOn) bgm.play().catch(()=>{});
+            resetGameVars(); isRunning = true; loop();
+        }
+
+        function resetGame() {
+            document.getElementById('game-over-screen').classList.add('hidden');
+            document.getElementById('start-screen').classList.remove('hidden');
+        }
+
+        function resetGameVars() {
+            score = 0; cendolsCompleted = 0; currentBowlStage = 0;
+            lives = 3; items = []; frame = 0; speedMultiplier = 1.5;
+            updateHUD();
+        }
+
+        function loop() {
+            if (!isRunning) return;
+            frame++;
+            if (frame % 400 === 0) speedMultiplier += 0.3; 
+
+            let spawnRate = Math.max(15, 50 - (frame / 100));
+            if (frame % Math.floor(spawnRate) === 0) spawnItem();
+
+            for (let i = items.length - 1; i >= 0; i--) {
+                items[i].y += items[i].speed * speedMultiplier;
+                items[i].rot += 0.05;
+                let dx = Math.abs(items[i].x - bowl.x);
+                let dy = items[i].y - bowl.y;
+                // Hitbox logic
+                if (dy > -50 && dy < 50 && dx < bowl.w / 2) {
+                    collectItem(items[i]); items.splice(i, 1); continue;
+                }
+                if (items[i].y > H + 100) items.splice(i, 1);
+            }
+
+            ctx.clearRect(0, 0, W, H);
+            drawBackground();
+            drawBowl(bowl.x, bowl.y, bowl.w, bowl.h);
+            items.forEach(item => drawItem(item));
+            requestAnimationFrame(loop);
+        }
+
+        function spawnItem() {
+            const def = ITEM_TYPES[Math.floor(Math.random() * ITEM_TYPES.length)];
+            items.push({
+                x: Math.random() * (W - 80) + 40, y: -80,
+                speed: Math.random() * 4 + 3,
+                rot: Math.random() * Math.PI, def: def
+            });
+        }
+
+        function collectItem(item) {
+            if (item.def.type === 'GOOD') {
+                score += item.def.score;
+                playSound(sfxCatch);
+                currentBowlStage++;
+                if(currentBowlStage >= 5) {
+                    cendolsCompleted++;
+                    score += 100; 
+                    currentBowlStage = 0; 
+                }
+            } else {
+                lives--;
+                playSound(sfxBad);
+                currentBowlStage = 0; // PENALTY RESET
+                const wrapper = document.getElementById('game-wrapper');
+                wrapper.style.transform = `translateX(${Math.random()*20 - 10}px)`;
+                setTimeout(()=>wrapper.style.transform="none", 100);
+            }
+            updateHUD();
+            if (lives <= 0) gameOver();
+        }
+
+        function updateHUD() {
+            document.getElementById('cendolVal').innerText = cendolsCompleted;
+            document.getElementById('scoreVal').innerText = score;
+            let h = ""; for(let i=0; i<lives; i++) h+="❤";
+            document.getElementById('livesVal').innerText = h;
+        }
+
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            bowl.x = (e.clientX - rect.left) * scaleX;
+            if (bowl.x < bowl.w/2) bowl.x = bowl.w/2;
+            if (bowl.x > W - bowl.w/2) bowl.x = W - bowl.w/2;
+        });
+
+        function playSound(audio) { if (audio) { audio.currentTime = 0; audio.play().catch(()=>{}); }}
+        function toggleMusic() {
+            musicOn = !musicOn;
+            const btn = document.getElementById('music-btn');
+            if (musicOn) { bgm.play().catch(()=>{}); btn.style.opacity = "1"; } 
+            else { bgm.pause(); btn.style.opacity = "0.5"; }
+        }
+
+        function gameOver() {
+            isRunning = false;
+            document.getElementById('hud').classList.add('hidden');
+            document.getElementById('game-over-screen').classList.remove('hidden');
+            document.getElementById('final-cendols').innerText = cendolsCompleted;
+            document.getElementById('final-score').innerText = score;
+            saveScore();
+        }
+
+        const STORAGE_KEY = 'cendol_ultimate_scores';
+        function saveScore() {
+            let scores = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+            scores.push({ name: playerName, cendols: cendolsCompleted, score: score });
+            scores.sort((a,b) => {
+                if(b.cendols !== a.cendols) return b.cendols - a.cendols;
+                return b.score - a.score;
+            });
+            scores = scores.slice(0, 5);
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(scores));
+            displayLeaderboard(scores);
+        }
+
+        function displayLeaderboard(scores) {
+            const tbody = document.getElementById('lb-body');
+            tbody.innerHTML = "";
+            scores.forEach((s, i) => {
+                let row = `<tr><td>#${i+1} ${s.name}</td><td>${s.cendols}</td><td>${s.score}</td></tr>`;
+                tbody.innerHTML += row;
+            });
+        }
+    </script>
+</body>
+</html>
